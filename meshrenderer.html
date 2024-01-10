@@ -308,7 +308,41 @@
 
         //     }
 
-        var test = 50;
+        function cubicBezier(t, p0, p1, p2, p3) {
+                var u = 1 - t;
+                var tt = t * t;
+                var uu = u * u;
+                var uuu = uu * u;
+                var ttt = tt * t;
+
+                var p = glMatrix.vec3.create();
+                glMatrix.vec3.scale(p, p0, uuu);
+                glMatrix.vec3.scaleAndAdd(p, p, p1, 3 * uu * t);
+                glMatrix.vec3.scaleAndAdd(p, p, p2, 3 * u * tt);
+                glMatrix.vec3.scaleAndAdd(p, p, p3, ttt);
+
+                return p;
+        }
+
+
+        function getCameraPosition(){
+
+            var controlPoints = [
+                                [-5, 2, 5],   // P0
+                                [-2, 2, 2],   // P1
+                                [2 , 2,-2],   // P2
+                                [5 , 2,-5]    // P3
+                            ];
+            // Calculate parameter 't' based on time or other factors
+            var t = (Math.sin(Date.now() * 0.001) + 1) / 2;  // Example: oscillating between 0 and 1
+
+            // Evaluate position on the Bézier curve
+            var position = cubicBezier(t, controlPoints[0], controlPoints[1], controlPoints[2], controlPoints[3]);
+
+            // Update the camera view matrix based on the new position
+            return position;
+
+        }
 
         // our render function
         function render(time) {
@@ -331,12 +365,11 @@
             gl.clearColor(environment.settings.background.r, environment.settings.background.g, environment.settings.background.b, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            test = -1 * test;
-            var newEye = [ 0 ,  0, 2.0 * Math.sqrt(3.0)];
+            //var newEye = [ 0 , 0 , 2.0 * Math.sqrt(3.0)];
+            var newEye = getCameraPosition()
             var newTarget = [0, 1, 0];
-            var newUp = [0, 0, 1];
+            var newUp = [10, 0, 1];
             var environmentView = glMatrix.mat4.create();
-
             environmentView = glMatrix.mat4.lookAt(environmentView, newEye, newTarget, newUp);
 
 
