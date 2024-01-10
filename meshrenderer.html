@@ -13,8 +13,6 @@
     <!-- glMatrix: A vector/matrix library for WebGL, https://glmatrix.net/ -->
     <script src="./js/gl-matrix.js"></script>
     
-    <script src="https://threejs.org/build/three.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
  
     <!-- TWGL: A Tiny WebGL helper Library, https://twgljs.org/ -->
     <script src="./js/twgl.js"></script>
@@ -201,8 +199,6 @@
             perspective: true,
             myParameter: 50,
             color1: { r: 1, g: 1, b: 1 },
-            // all custom parameters need to have a default value
-            //myParameter: 50,
         };
 
     
@@ -223,12 +219,6 @@
             shininessMap: "",
             emissiveMap: "",
             bumpMap: "",
-            // x_camera:0,
-            // y_camera:2,
-            // x_target:,
-            // y_target:
-            // z:
-
         };
 
         const environment = {
@@ -294,19 +284,15 @@
         requestAnimationFrame(render);
 
 
-        // function updateCamera() {
-        //         // Update the camera parameters based on your logic
-        //         const newEye = [0 ,  environment.settings.fov, 2.0 * Math.sqrt(3.0), 100];
-        //         const newTarget = [0, 0, 0];
-        //         const newUp = [0, 0, 0];
-
-        //         glMatrix.mat4.lookAt(defaultSettings.view, eye, target, up);
-
-
-        //         // Call the updateCameraView function
-        //         updateCameraView(newEye, newTarget, newUp);
-
-        //     }
+        function updateCameraView() {
+            
+            var newEye = getCameraPosition()
+            var newTarget = [0, 1, 0];
+            var newUp = [0, 0, 1];
+            var environmentView = glMatrix.mat4.create();
+            environmentView = glMatrix.mat4.lookAt(environmentView, newEye, newTarget, newUp);
+            return environmentView;
+        }
 
         function cubicBezier(t, p0, p1, p2, p3) {
                 var u = 1 - t;
@@ -326,7 +312,6 @@
 
 
         function getCameraPosition(){
-
             var controlPoints = [
                                 [-5, 2, 5],   // P0
                                 [-2, 2, 2],   // P1
@@ -334,7 +319,7 @@
                                 [5 , 2,-5]    // P3
                             ];
             // Calculate parameter 't' based on time or other factors
-            var t = (Math.sin(Date.now() * 0.001) + 1) / 2;  // Example: oscillating between 0 and 1
+            var t = (Math.sin(Date.now() * 0.0001) + 1) / 2;  // Example: oscillating between 0 and 1
 
             // Evaluate position on the Bézier curve
             var position = cubicBezier(t, controlPoints[0], controlPoints[1], controlPoints[2], controlPoints[3]);
@@ -344,9 +329,12 @@
 
         }
 
+        var environmentViewPre = glMatrix.mat4.create();
+        var keyframesList = [];
+
+
         // our render function
         function render(time) {
-
             if (!previousTime)
                 previousTime = time;
 
@@ -365,13 +353,27 @@
             gl.clearColor(environment.settings.background.r, environment.settings.background.g, environment.settings.background.b, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            //var newEye = [ 0 , 0 , 2.0 * Math.sqrt(3.0)];
-            var newEye = getCameraPosition()
-            var newTarget = [0, 1, 0];
-            var newUp = [10, 0, 1];
-            var environmentView = glMatrix.mat4.create();
-            environmentView = glMatrix.mat4.lookAt(environmentView, newEye, newTarget, newUp);
+            
 
+            var environmentView = environmentViewPre
+            if (!environment.settings.stopAnimationClicked)
+                environmentView = updateCameraView();
+                environmentViewPre = environmentView
+
+            if (environment.settings.keyframesClicked){
+                keyframesList.push(environmentView)
+                environment.settings.keyframesClicked = false
+            }
+            
+
+            if (environment.settings.removeKeyframeClicked){
+                keyframesList.pop(environmentView)
+                environment.settings.removeKeyframeClicked = false
+                if (keyframesList.length!=0)
+                    environmentViewPre = keyframesList[keyframesList.length-1]
+            }
+
+            
 
             // check whether some geometry is loaded already
             if (environment.scene.geometries) {
@@ -381,16 +383,6 @@
                 const zNear = 0.125;
                 const zFar = 256.0;
 
-        
-                // // init camera 
-                // const camera = new THREE.PerspectiveCamera(fov, aspect, zNear, zFar);
-                // // Change camera position
-                // camera.position.set(1, 1, 200);
-                // // Look at a specific point
-                // camera.lookAt(new THREE.Vector3(100, -.5, 0.0));
-                // // Change camera rotation (if needed)
-                // // Note: Use rotation or quaternion based on your requirements
-                // camera.rotation.set(0.0, 1.0, 0.0);
 
 
                 let projection = glMatrix.mat4.create();
@@ -482,64 +474,7 @@
             }
             // we continuously render frames
             requestAnimationFrame(render);
-        }
-//////////////////////////////////////////////////////////////////////////////////
-// function viewUpdate(x){
-//     const eye = [x, 0, 2.0 * Math.sqrt(3.0)];
-//     const target = [0, 0, 0];
-//     const up = [0, 1, 0];
-//     defaultSettings.view = glMatrix.mat4.create();
-//     glMatrix.mat4.lookAt(defaultSettings.view, eye, target, up);
-// }
-
-
-// function camera(){
-//   // Create a Three.js scene, camera, and renderer
-//         const scene = new THREE.Scene();
-//         const fov = environment.settings.fov * Math.PI / 180;
-//         const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-//         const zNear = 0.125;
-//         const zFar = 256.0;
-//         const camera = new THREE.PerspectiveCamera(fov, aspect, zNear, zFar);
-//         const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
-//         renderer.setSize(window.innerWidth, window.innerHeight);
-
-//         // Initialize spline curve
-//         const splinePoints = [
-//             new THREE.Vector3(0, 0, 0),
-//             new THREE.Vector3(1, 1, 5),
-//             new THREE.Vector3(2, 2, 0),
-//             new THREE.Vector3(3, 0, 2),
-//             // Add more control points as needed
-//         ];
-//         const spline = new THREE.CatmullRomCurve3(splinePoints);
-
-//         // Animation variables
-//         const animationDuration = 5000; // in milliseconds
-
-//         // Set up Tween.js
-//         const tween = new TWEEN.Tween({ t: 0 })
-//             .to({ t: 1 }, animationDuration)
-//             .onUpdate(function () {
-//                 const position = spline.getPointAt(this.t);
-//                 camera.position.copy(position);
-//                 camera.lookAt(scene.position);
-//                 renderer.render(scene, camera);
-//             });
-
-//         // Start the animation
-//         tween.start();
-
-//         // Render the scene
-//         function animate() {
-//             requestAnimationFrame(animate);
-//             TWEEN.update();
-//         }
-
-//         animate();
-//     }
-
-    
+        }   
     </script>
 
 </body>
