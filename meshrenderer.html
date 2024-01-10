@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>CG - Mesh Renderer</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+
+
+<body>
+    <!-- glMatrix: A vector/matrix library for WebGL, https://glmatrix.net/ -->
+    <script src="./js/gl-matrix.js"></script>
+    
+    <script src="https://threejs.org/build/three.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+ 
+    <!-- TWGL: A Tiny WebGL helper Library, https://twgljs.org/ -->
+    <script src="./js/twgl.js"></script>
+
+    <!-- Tweakpane: Compact pane library for fine-tuning parameters, https://cocopon.github.io/tweakpane/ -->
+    <script src="./js/tweakpane-4.0.0.js"></script>
+
+    <!--  implementation of an arcball controller, see https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Arcball -->
+    <script src="./js/arcball.js"></script>
+
+    <!-- parser for the Wavefront OBJ (and MTL) file format, based on https://webgl2fundamentals.org/webgl/webgl-load-obj-w-mtl-w-normal-maps.html -->
+    <script src="./js/parseobj.js"></script>
+
+    <!-- wrapper for IndexedDB object store for saving settings  -->
+    <script src="./js/storage.js"></script>
+
+    <!-- utility functions for ui, file loading, etc. to not clutter up this file  -->
+    <script src="./js/util.js"></script>
+
+    <canvas id="canvas" tabindex="0" autofocus></canvas>
+    <div id="pane"></div>
+    <!-- <div id="color2"></div> -->
+    <!-- our vertex shader; it handles the processing of individual vertices, see https://www.khronos.org/opengl/wiki/Vertex_Shader -->
+    <script id="vs" type="x-shader/x-vertex">
+        #version 300 es
+
+
+
+        // uniforms are constant for the entire primitive
+        uniform mat4 modelViewProjection;
+        uniform mat4 transposeInverseModelView;
+
+        // per-vertex attributes of our mesh
+        in vec4 a_position;
+        in vec3 a_normal;
+        in vec2 a_texcoord; // Add this line for texture coordinates
+        // Add these lines at the beginning of your vertex shader
+        in vec3 a_tangent;
+        in vec3 a_bitangent;
+        /*
+        in vec3 a_normal;
+        in vec3 a_tangent;
+        in vec2 a_texcoord;
+        in vec3 a_color;
+        */
+
+        // these are the attributes that will be interpolated and passed to the shader
+        out vec4 v_position;
+        out vec3 v_normal;
+        out vec3 v_lightDir;
+        out vec2 v_texcoord; // Add this line for texture coordinates
+
+        /*
+        out vec3 v_normal;
+        out vec3 v_tangent;
+        out vec2 v_texcoord;
+        out vec3 v_color;
+        */
+
+
+        uniform float x_position;
+        uniform float y_position;
+        uniform float z_position;
+
+        out mat3 tangentToWorldMatrix;
+
+         void main() {          
+            gl_Position = modelViewProjection * a_position;
+
+        vec3 normal = normalize(mat3(transposeInverseModelView) * a_normal);
+        v_normal = normal;
+
+        // Calculate tangent-to-world matrix
+        tangentToWorldMatrix = mat3(a_tangent, a_bitangent, normalize(a_normal));
+
+
+        vec4 lightPosition = vec4(x_position,y_position, z_position, 1.0); // Adjust light position as needed
+        // vec4 lightPosition = vec4(u_xPosition, u_yPosition, u_zPosition, 1.0); // Adjust light position using u_xPosition, u_yPosition, u_zPosition
+
+        vec3 lightDir = normalize(lightPosition.xyz - a_position.xyz);
+        v_lightDir = lightDir;
+
+        v_texcoord = a_texcoord; // Pass texture coordinates to fragment shader
+        }
+    </script>
+
+    <!-- our fragment shader; reponsible for determining the output (color, depth, etc.) for each sample of a rasterized primitive (fragment), see https://www.khronos.org/opengl/wiki/Fragment_Shader -->
+    <script id="fs" type="x-shader/x-fragment">
+        #version 300 es
+        precision highp float;
+
+        
+        // ... existing in declarations ...
+        in mat3 tangentToWorldMatrix;
+
+        // these are the interpolated attributes we receive from the vertex shader
+        in vec4 v_position;
+        in vec3 v_normal;
+        in vec3 v_lightDir;
+        in vec2 v_texcoord; // Ensure this line is present for texture coordinates
+        /*
+        in vec3 v_normal;
+        in vec3 v_tangent;
+        in vec2 v_texcoord;
+        in vec3 v_color;
+        */
+
+        // these uniforms will be passed in according to the materials of our mesh
+        /*
+        uniform vec3 diffuse;
+        uniform vec3 ambient;
+        uniform vec3 emissive;
+        uniform vec3 specular;
+        uniform float shininess;
+        */
+
+        // sampler variables are used to perform texture lookups
+        /*
+        uniform sampler2D ambientMap;
+        uniform sampler2D diffuseMap;
+        uniform sampler2D emissiveMap;
+        uniform sampler2D specularMap;
+        uniform sampler2D shininessMap;
+        uniform sampler2D bumpMap;
+
+        uniform bool _ambientMap;
+        uniform bool _diffuseMap;
+        uniform bool _emissiveMap;
+        uniform bool _shininessMap;
+        uniform bool _bumpMap;
+        */
+        uniform vec3 ambient;
+        uniform vec3 diffuse;
+        uniform vec3 specular;
+        uniform float shininess;
+
+        uniform vec3 u_color1;  // The color uniform
+        uniform sampler2D ambientMap;
+        uniform sampler2D diffuseMap;
+        uniform sampler2D specularMap;
+        uniform sampler2D bumpMap;
+
+        // the actual color output of the fragment shader
+        out vec4 outColor;
+
+
+    void main() {
+
+        vec3 tangentSpaceNormal = texture(bumpMap, v_texcoord).xyz * 2.0 - 1.0;
+        vec3 worldSpaceNormal = normalize(tangentToWorldMatrix * tangentSpaceNormal);
+
+        vec3 normal = normalize(worldSpaceNormal);
+        vec3 lightDir = normalize(v_lightDir);
+
+        float diff = max(dot(normal, lightDir), 0.0);
+        //vec3 diffuseColor = diffuse * diff;
+        vec3 diffuseColor = texture(diffuseMap, v_texcoord).rgb * diff;
+
+
+        vec3 viewDir = normalize(-v_lightDir);
+        vec3 reflectDir = reflect(-lightDir, normal);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+        // vec3 specularColor = specular * spec;
+        vec3 specularColor = texture(specularMap, v_texcoord).rgb * spec;
+
+
+        vec3 finalColor = ambient * texture(ambientMap, v_texcoord).rgb + diffuseColor + specularColor ;
+        outColor = vec4(finalColor, 1.0);
+
+        }
+    </script>
+
+    <!-- our main code -->
+    <script type="module">
+        // our WebGL context
+        const gl = document.querySelector("#canvas").getContext("webgl2");
+
+        // our default settings
+        const defaultSettings = {
+            objects: {},
+            materials: {},
+            background: { r: 1, g: 1, b: 1 },
+            fov: 60,
+            perspective: true,
+            myParameter: 50,
+            color1: { r: 1, g: 1, b: 1 },
+            // all custom parameters need to have a default value
+            //myParameter: 50,
+        };
+
+    
+
+        // our default material
+        const defaultMaterial = {
+            diffuse: [1, 1, 1],
+            ambient: [0, 0, 0],
+            specular: [1, 1, 1],
+            emissive: [0, 0, 0],
+            shininess: 100,
+            x_position: 1.0,
+            y_position: 1.0,
+            z_position: 1.0,
+            ambientMap: "",
+            diffuseMap: "",
+            specularMap: "",
+            shininessMap: "",
+            emissiveMap: "",
+            bumpMap: "",
+            // x_camera:0,
+            // y_camera:2,
+            // x_target:,
+            // y_target:
+            // z:
+
+        };
+
+        const environment = {
+            store: new Storage("coast"),
+            gl,
+            ui: {},
+            scene: {},
+            materials: {},
+            images: { "": null },
+            textures: {},
+            settings: defaultSettings,
+            defaults: {
+                settings: defaultSettings,
+                material: defaultMaterial,
+            },
+            statistics: {
+                totalVertices: 0,
+                renderedVertices: 0,
+                framesPerSecond: 0,
+            },
+        };
+
+                    // set up our default view matrix
+                    const eye = [160, 0, 2.0 * Math.sqrt(3.0),100];
+        const target = [0, 0, 0];
+        const up = [0, 1, 0];
+        defaultSettings.view = glMatrix.mat4.create();
+        glMatrix.mat4.lookAt(defaultSettings.view, eye, target, up);
+
+
+        let previousTime = null;
+
+        // here we initialize our shaders
+        twgl.setAttributePrefix("a_");
+        environment.programInfo = twgl.createProgramInfo(gl, ["vs", "fs"]);
+
+        // we want to store our settings when the page is reloaded or the tab is closed, but some of these events are triggered unreliably on different platforms
+        // this combination seems to work in all of the tested environments       
+        window.addEventListener("pagehide", (event) => { saveSettings(environment); });
+        window.addEventListener("beforeunload", (event) => { saveSettings(environment); });
+        document.addEventListener("visibilitychange", (event) => { saveSettings(environment); });
+
+        // set up our user interface
+        setupInterface(environment);
+
+        // restore data and settings
+        restoreSession(environment, function (env) {
+            // add any custom UI elements/input bindings here; make sure to add a proper default value to defaultSettings
+            // const myFolder = env.ui.generalPane.addFolder({
+            //     title:"My Custom Folder",
+            //     expanded: true
+            // });
+            // myFolder.addBinding(env.settings,"x_position", {
+            //     min: 0,
+            //     max: 100,
+            // });
+           
+        });
+
+        // start the render loop
+        requestAnimationFrame(render);
+
+
+
+        // our render function
+        function render(time) {
+
+            if (!previousTime)
+                previousTime = time;
+
+            const timeDelta = 0.001 * (time - previousTime);
+            environment.controller.animate(timeDelta);
+            environment.statistics.framesPerSecond = timeDelta > 0.0 ? 1.0 / timeDelta : 0.0;
+            previousTime = time;
+
+            twgl.resizeCanvasToDisplaySize(gl.canvas);
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LESS);
+            gl.enable(gl.CULL_FACE);
+            gl.cullFace(gl.BACK);
+            gl.clearColor(environment.settings.background.r, environment.settings.background.g, environment.settings.background.b, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            // check whether some geometry is loaded already
+            if (environment.scene.geometries) {
+
+                const fov = environment.settings.fov * Math.PI / 180;
+                const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+                const zNear = 0.125;
+                const zFar = 256.0;
+
+                // // init camera 
+                // const camera = new THREE.PerspectiveCamera(fov, aspect, zNear, zFar);
+                // // Change camera position
+                // camera.position.set(1, 1, 200);
+                // // Look at a specific point
+                // camera.lookAt(new THREE.Vector3(100, -.5, 0.0));
+                // // Change camera rotation (if needed)
+                // // Note: Use rotation or quaternion based on your requirements
+                // camera.rotation.set(0.0, 1.0, 0.0);
+
+
+                let projection = glMatrix.mat4.create();
+
+                if (environment.settings.perspective) {
+                    // set up our perspective projection matrix
+                    projection = glMatrix.mat4.perspective(projection, fov, aspect, zNear, zFar);
+                } else {
+                    // set up a orthographic projection matrix that approximates our perspective projection
+                    const top = 2.0 * Math.sqrt(3.0) * Math.tan(0.5 * fov);
+                    const right = top * aspect;
+                    projection = glMatrix.mat4.ortho(projection, -right, right, -top, top, zNear, zFar);
+                }
+
+                // our model matrix transforms the object coordinates into a normalized and centered coordinate system
+                const extent = glMatrix.vec3.create();
+                const offset = glMatrix.vec3.create();
+                glMatrix.vec3.subtract(extent, environment.scene.bounds.max, environment.scene.bounds.min);
+                glMatrix.vec3.scaleAndAdd(offset, environment.scene.bounds.min, extent, 0.5);
+                glMatrix.vec3.negate(offset, offset);
+                const maxDim = Math.max(extent[0], extent[1], extent[2]);
+                const scale = 2.0 / maxDim;
+
+                const model = glMatrix.mat4.create();
+                glMatrix.mat4.scale(model, model, [scale, scale, scale]);
+                glMatrix.mat4.translate(model, model, offset);
+
+                // some common matrices that might come in handy
+                const modelView = glMatrix.mat4.create();
+                glMatrix.mat4.multiply(modelView, environment.settings.view, model);
+
+                const inverseModelView = glMatrix.mat4.create();
+                glMatrix.mat4.invert(inverseModelView, modelView);
+
+                const transposeInverseModelView = glMatrix.mat4.create();
+                glMatrix.mat4.transpose(transposeInverseModelView, inverseModelView);
+
+                const modelViewProjection = glMatrix.mat4.create();
+                glMatrix.mat4.multiply(modelViewProjection, projection, modelView);
+
+                const inverseModelViewProjection = glMatrix.mat4.create();
+                glMatrix.mat4.invert(inverseModelViewProjection, modelViewProjection);
+
+                // these are the values actually passed to our shaders
+                const uniforms = {
+                    modelViewProjection,
+                    transposeInverseModelView
+                }
+
+                gl.useProgram(environment.programInfo.program);
+                twgl.setUniforms(environment.programInfo, uniforms);
+
+                environment.statistics.totalVertices = 0;
+                environment.statistics.renderedVertices = 0;
+
+                for (const obj of environment.scene.geometries) {
+
+                    environment.statistics.totalVertices += obj.data.position.length;
+
+                    if (obj.name in environment.settings.objects) {
+                        if (environment.settings.objects[obj.name].enabled) {
+
+                            environment.statistics.renderedVertices += obj.data.position.length;
+
+                            const m = {
+                                ...environment.defaults.material,
+                                ...environment.materials[obj.material],
+                                ...environment.settings.materials[obj.material]
+                            };
+
+                            Object.entries(m)
+                                .filter(([key]) => !key.startsWith("_") && key.endsWith("Map"))
+                                .forEach(([key, filename]) => {
+                                    if (filename in environment.textures) {
+                                        m[key] = environment.textures[filename];
+                                        m["_" + key] = true;
+                                    } else {
+                                        delete m[key];
+                                        m["_" + key] = false;
+                                    }
+                                });
+
+                            gl.bindVertexArray(obj.gl.vertexArray);
+                            twgl.setUniforms(environment.programInfo, m);
+                            twgl.drawBufferInfo(gl, obj.gl.bufferInfo);
+                        }
+                    }
+                }
+            }
+            // we continuously render frames
+            requestAnimationFrame(render);
+        }
+//////////////////////////////////////////////////////////////////////////////////
+function viewUpdate(x){
+    const eye = [x, 0, 2.0 * Math.sqrt(3.0)];
+    const target = [0, 0, 0];
+    const up = [0, 1, 0];
+    defaultSettings.view = glMatrix.mat4.create();
+    glMatrix.mat4.lookAt(defaultSettings.view, eye, target, up);
+}
+
+
+function camera(){
+  // Create a Three.js scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const fov = environment.settings.fov * Math.PI / 180;
+        const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+        const zNear = 0.125;
+        const zFar = 256.0;
+        const camera = new THREE.PerspectiveCamera(fov, aspect, zNear, zFar);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // Initialize spline curve
+        const splinePoints = [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(1, 1, 5),
+            new THREE.Vector3(2, 2, 0),
+            new THREE.Vector3(3, 0, 2),
+            // Add more control points as needed
+        ];
+        const spline = new THREE.CatmullRomCurve3(splinePoints);
+
+        // Animation variables
+        const animationDuration = 5000; // in milliseconds
+
+        // Set up Tween.js
+        const tween = new TWEEN.Tween({ t: 0 })
+            .to({ t: 1 }, animationDuration)
+            .onUpdate(function () {
+                const position = spline.getPointAt(this.t);
+                camera.position.copy(position);
+                camera.lookAt(scene.position);
+                renderer.render(scene, camera);
+            });
+
+        // Start the animation
+        tween.start();
+
+        // Render the scene
+        function animate() {
+            requestAnimationFrame(animate);
+            TWEEN.update();
+        }
+
+        animate();
+    }
+
+    
+    </script>
+
+</body>
+
+</html>
