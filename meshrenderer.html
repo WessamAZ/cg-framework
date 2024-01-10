@@ -251,9 +251,9 @@
             },
         };
 
-                    // set up our default view matrix
-                    const eye = [160, 100, 2.0 * Math.sqrt(3.0),100];
-        const target = [100, 0, 0];
+        // set up our default view matrix
+        const eye = [0, 0, 2.0 * Math.sqrt(3.0),100];
+        const target = [0, 0, 0];
         const up = [0, 1, 0];
         defaultSettings.view = glMatrix.mat4.create();
         glMatrix.mat4.lookAt(defaultSettings.view, eye, target, up);
